@@ -1,0 +1,17 @@
+# Backend (Python/Django)
+.venv/
+__pycache__/
+*.pyc
+db.sqlite3
+.env
+*.log
+
+# Frontend (React/Node)
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# SO y Editores
+.DS_Store
+.vscode/
+.idea/
