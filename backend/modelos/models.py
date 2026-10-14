@@ -55,7 +55,7 @@ class TokenInvitacion(models.Model):
 # Usuario (ya existía — se cambia db_table a 'Usuario')
 # ============================================================
 class Usuario(models.Model):
-    idUsuario = models.AutoField(primary_key=True)
+    dni = models.CharField(primary_key=True, max_length=20, verbose_name="DNI del Usuario")
     nombre = models.CharField(max_length=100)
     correo = models.EmailField(unique=True, max_length=100)
     contrasena = models.CharField(max_length=255)
@@ -120,7 +120,7 @@ class Invitado(models.Model):
 # Categoria
 # ============================================================
 class Categoria(models.Model):
-    idCategoria = models.AutoField(primary_key=True)
+    codigo = models.CharField(primary_key=True, max_length=50, verbose_name="Código de Categoría")
     nombre = models.CharField(max_length=100)
     descripcion = models.TextField(blank=True, default='')
 
@@ -137,7 +137,7 @@ class Categoria(models.Model):
 # Proveedor
 # ============================================================
 class Proveedor(models.Model):
-    idProveedor = models.AutoField(primary_key=True)
+    nit = models.CharField(primary_key=True, max_length=50, verbose_name="NIT del Proveedor")
     nombre = models.CharField(max_length=100)
     telefono = models.CharField(max_length=20)
     correo = models.EmailField(max_length=100)
@@ -155,11 +155,12 @@ class Proveedor(models.Model):
 # Producto (FK → Categoria)
 # ============================================================
 class Producto(models.Model):
-    idProducto = models.AutoField(primary_key=True)
+    dni_producto = models.CharField(primary_key=True, max_length=50, verbose_name="DNI del Producto")
     nombre = models.CharField(max_length=100)
     descripcion = models.TextField(blank=True, default='')
-    precio = models.DecimalField(max_digits=10, decimal_places=2)
+    precio = models.DecimalField(max_digits=10, decimal_places=2, default=0) # Ahora por defecto es 0 para insumos
     stock = models.IntegerField(default=0)
+    es_insumo = models.BooleanField(default=True) # Diferenciar entre materia prima y platos del menú
     categoria = models.ForeignKey(
         Categoria,
         on_delete=models.SET_NULL,
@@ -173,8 +174,44 @@ class Producto(models.Model):
         verbose_name = 'Producto'
         verbose_name_plural = 'Productos'
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Check stock and create notification if it drops below threshold (e.g. 10)
+        if self.stock < 10:
+            import datetime
+            Notificacion.objects.get_or_create(
+                mensaje=f"Alerta de Stock Bajo: El producto/insumo {self.nombre} (DNI: {self.dni_producto}) tiene un stock de {self.stock}.",
+                fecha=datetime.date.today()
+            )
+
     def __str__(self):
         return f"{self.nombre} (${self.precio})"
+
+
+# ============================================================
+# RecetaInsumo (Relación Plato <-> Insumos de Inventario descontados)
+# ============================================================
+class RecetaInsumo(models.Model):
+    id = models.AutoField(primary_key=True)
+    plato = models.ForeignKey(
+        Producto,
+        on_delete=models.CASCADE,
+        related_name='ingredientes_receta'
+    )
+    insumo = models.ForeignKey(
+        Producto,
+        on_delete=models.CASCADE,
+        related_name='usado_en_recetas'
+    )
+    cantidad = models.IntegerField(default=1)
+
+    class Meta:
+        db_table = 'RecetaInsumo'
+        verbose_name = 'Insumo de Receta'
+        verbose_name_plural = 'Insumos de Recetas'
+
+    def __str__(self):
+        return f"{self.plato.nombre} - {self.insumo.nombre} (x{self.cantidad})"
 
 
 # ============================================================
@@ -192,8 +229,13 @@ class EntradaProducto(models.Model):
         on_delete=models.CASCADE,
         related_name='entradas'
     )
-    fechaEntrada = models.DateField()
+    fechaEntrada = models.DateField(auto_now_add=True)
     cantidad = models.IntegerField()
+    precio_compra_unidad = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    costo_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        db_table = 'EntradaProducto'
 
     class Meta:
         db_table = 'EntradaProducto'
@@ -298,8 +340,16 @@ class Inventario(models.Model):
 # ============================================================
 class Factura(models.Model):
     idFactura = models.AutoField(primary_key=True)
-    fecha = models.DateField()
-    total = models.DecimalField(max_digits=10, decimal_places=2)
+    numero_factura = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    fecha = models.DateField(auto_now_add=True)
+    nit_cliente = models.CharField(max_length=50, blank=True, null=True)
+    razon_social = models.CharField(max_length=200, blank=True, null=True)
+    metodo_pago = models.CharField(max_length=50, blank=True, null=True)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    iva = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    monto_recibido = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    cambio = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     pedido = models.ForeignKey(
         Pedido,
         on_delete=models.CASCADE,
@@ -312,7 +362,7 @@ class Factura(models.Model):
         verbose_name_plural = 'Facturas'
 
     def __str__(self):
-        return f"Factura #{self.idFactura} - Total: ${self.total}"
+        return f"Factura #{self.numero_factura or self.idFactura} - Total: ${self.total}"
 
 
 # ============================================================

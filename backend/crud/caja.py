@@ -24,7 +24,7 @@ def crear_pedido_crud(datos: PedidoCreate, usuario):
         total_pedido = float(datos.costo_envio or 0)
         for det in datos.detalles:
             try:
-                producto = Producto.objects.get(idProducto=det.producto_id)
+                producto = Producto.objects.get(dni_producto=det.producto_id)
             except Producto.DoesNotExist:
                 raise ValueError(f"Producto con ID {det.producto_id} no existe.")
             
@@ -61,13 +61,107 @@ def crear_pedido_crud(datos: PedidoCreate, usuario):
 
         return nuevo_pedido
 
+def actualizar_pedido_crud(pedido_id: int, datos: PedidoUpdate):
+    with transaction.atomic():
+        try:
+            pedido = Pedido.objects.select_for_update().get(idPedido=pedido_id)
+        except Pedido.DoesNotExist:
+            raise Http404("Pedido no encontrado")
+            
+        estado_previo = pedido.estado
+
+        # Actualizar campos de cabecera si vienen especificados
+        if datos.responsableRecepcion is not None:
+            pedido.responsableRecepcion = datos.responsableRecepcion.strip()
+        if datos.direccionEnvio is not None:
+            pedido.direccionEnvio = datos.direccionEnvio.strip()
+        if datos.distancia_km is not None:
+            pedido.distancia_km = float(datos.distancia_km)
+        if datos.costo_envio is not None:
+            pedido.costo_envio = float(datos.costo_envio)
+        if datos.estado is not None:
+            nuevo_estado = datos.estado.strip()
+            if nuevo_estado == "Cancelado" and estado_previo != "Cancelado" and datos.detalles is None:
+                for d in pedido.detalles.all():
+                    d.producto.stock += d.cantidad
+                    d.producto.save()
+            pedido.estado = nuevo_estado
+
+        # Determinar nombre y cédula del cliente
+        cliente_actual = datos.cliente
+        if not cliente_actual:
+            primer_det = pedido.detalles.first()
+            cliente_actual = primer_det.cliente if primer_det else "Cliente General"
+
+        cedula_actual = datos.cedulaCliente
+        if not cedula_actual:
+            primer_det = pedido.detalles.first()
+            cedula_actual = primer_det.cedulaCliente if primer_det else 0
+
+        # Si no se cambiaron los detalles de productos, actualizar cliente y cédula en los detalles existentes
+        if datos.detalles is None:
+            if datos.cliente is not None or datos.cedulaCliente is not None:
+                for d in pedido.detalles.all():
+                    if datos.cliente is not None:
+                        d.cliente = cliente_actual
+                    if datos.cedulaCliente is not None:
+                        d.cedulaCliente = cedula_actual
+                    d.save()
+        else:
+            # Se proporcionaron nuevos detalles de productos
+            # 1. Revertir el stock de los productos anteriores si el pedido no estaba cancelado
+            if estado_previo != "Cancelado":
+                for d in pedido.detalles.all():
+                    d.producto.stock += d.cantidad
+                    d.producto.save()
+
+            # Eliminar detalles previos
+            pedido.detalles.all().delete()
+
+            # 2. Validar y descontar stock para los nuevos productos (si el nuevo estado no es Cancelado)
+            for det in datos.detalles:
+                try:
+                    producto = Producto.objects.select_for_update().get(dni_producto=det.producto_id)
+                except Producto.DoesNotExist:
+                    raise ValueError(f"El producto con ID {det.producto_id} no existe.")
+
+                if pedido.estado != "Cancelado":
+                    if producto.stock < det.cantidad:
+                        raise ValueError(f"Stock insuficiente para {producto.nombre}. Disponible: {producto.stock}, Solicitado: {det.cantidad}")
+                    producto.stock -= det.cantidad
+                    producto.save()
+
+                subtotal = producto.precio * det.cantidad
+                DetallePedido.objects.create(
+                    pedido=pedido,
+                    producto=producto,
+                    cantidad=det.cantidad,
+                    subtotal=subtotal,
+                    cliente=cliente_actual,
+                    cedulaCliente=cedula_actual
+                )
+
+        # Recalcular el total general y regenerar el enlace Wompi
+        total_items = sum(float(d.subtotal) for d in pedido.detalles.all())
+        total_pedido = total_items + float(pedido.costo_envio or 0)
+
+        monto_centavos = int(total_pedido * 100)
+        referencia = f"PEDIDO-{pedido.idPedido}-{int(timezone.now().timestamp())}"
+        firma = generar_firma_integridad(referencia, monto_centavos)
+        url_checkout = f"https://checkout.wompi.co/p/?public-key={WOMPI_PUB_KEY}&currency=COP&amount-in-cents={monto_centavos}&reference={referencia}&signature:integrity={firma}"
+        pedido.wompi_payment_url = url_checkout
+        pedido.wompi_transaction_id = referencia
+        pedido.save()
+
+        return pedido
+
 def formatear_pedido_response(pedido):
     detalles = []
     total = 0
     for d in pedido.detalles.all():
         detalles.append({
             "idDetalle": d.idDetalle,
-            "producto_id": d.producto.idProducto,
+            "producto_id": d.producto.dni_producto,
             "producto_nombre": d.producto.nombre,
             "cantidad": d.cantidad,
             "subtotal": float(d.subtotal),
@@ -84,7 +178,7 @@ def formatear_pedido_response(pedido):
         "direccionEnvio": pedido.direccionEnvio,
         "distancia_km": pedido.distancia_km,
         "costo_envio": float(pedido.costo_envio),
-        "usuario_id": pedido.usuario.idUsuario,
+        "usuario_id": pedido.usuario.dni,
         "total": total + float(pedido.costo_envio),
         "detalles": detalles,
         "wompi_transaction_id": pedido.wompi_transaction_id,

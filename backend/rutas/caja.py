@@ -21,7 +21,7 @@ caja_router = Router()
 
 @caja_router.get("/productos", response=List[ProductoResponse], auth=AuthBearer())
 def listar_productos(request):
-    return Producto.objects.all()
+    return Producto.objects.filter(es_insumo=False)
 
 @caja_router.post("/pedidos", response=PedidoResponse, auth=AuthBearer())
 def crear_pedido(request, datos: PedidoCreate):
@@ -36,62 +36,136 @@ def crear_pedido(request, datos: PedidoCreate):
 
 import requests
 import os
+import re
+import urllib.parse
 from esquemas.caja import CalcularEnvioRequest
 
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "AIzaSyCoj1dIj7uUJjtiQnuBcuEQWQpBPsRK9X4")
+from crud.caja import (
+    crear_pedido_crud, actualizar_pedido_crud, formatear_pedido_response, 
+    enviar_pedido_proveedor, generar_factura_pedido,
+    generar_pdf_factura
+)
+
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 # IMPORTANTE: Cambia esta variable por la dirección real de tu local para que el cálculo sea exacto
 DIRECCION_ORIGEN = os.getenv("DIRECCION_ORIGEN", "Cali, Valle del Cauca, Colombia")
+
+def geocodificar_osm(direccion: str):
+    """Intenta geocodificar una dirección usando OpenStreetMap Nominatim"""
+    clean_dir = direccion.replace('#', ' ').replace('-', ' ').replace('No.', ' ').replace('N°', ' ')
+    headers = {'User-Agent': 'QuerenciaApp/1.0 (contacto@laquerencia.com)'}
+    try:
+        res = requests.get(
+            'https://nominatim.openstreetmap.org/search',
+            params={'q': clean_dir, 'format': 'json', 'limit': 1},
+            headers=headers,
+            timeout=4
+        )
+        if res.ok:
+            data = res.json()
+            if data and len(data) > 0:
+                return float(data[0]['lat']), float(data[0]['lon'])
+    except Exception:
+        pass
+    return None
+
+def calcular_distancia_osrm(lat1: float, lon1: float, lat2: float, lon2: float):
+    """Calcula distancia real por carretera usando el motor OSRM"""
+    try:
+        url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
+        res = requests.get(url, timeout=5)
+        if res.ok:
+            data = res.json()
+            if data.get('code') == 'Ok' and data.get('routes'):
+                metros = data['routes'][0]['distance']
+                return metros / 1000.0
+    except Exception:
+        pass
+    # Fallback por fórmula de Haversine si OSRM no responde
+    import math
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return (R * c) * 1.3
 
 @caja_router.post("/calcular-envio", auth=AuthBearer())
 def calcular_envio(request, body: CalcularEnvioRequest):
     direccion_destino = body.direccion.strip()
     if not direccion_destino:
-        return {"distancia_km": 0.0, "costo_envio": 0.0}
-        
-    # Le agregamos ", Colombia" si el usuario no lo puso, para evitar que Google Maps busque la dirección en otro país
-    if "colombia" not in direccion_destino.lower():
-        direccion_destino += ", Colombia"
+        return {"distancia_km": 0.0, "costo_envio": 0.0, "mapa_url": ""}
 
-    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
-    params = {
-        "origins": DIRECCION_ORIGEN,
-        "destinations": direccion_destino,
-        "key": GOOGLE_MAPS_API_KEY,
-        "units": "metric"
-    }
-    
-    import urllib.parse
-    
-    try:
-        res = requests.get(url, params=params, timeout=10)
-        data = res.json()
-        
-        if data.get("status") == "OK":
-            element = data["rows"][0]["elements"][0]
-            if element.get("status") == "OK":
-                # 'value' está en metros, lo convertimos a kilómetros
-                metros = element["distance"]["value"]
-                km_exactos = metros / 1000.0
-                
-                # Regla de Negocio: Tarifa de $3000 base + $1000 por cada KM exacto (redondeando hacia abajo)
-                costo = 3000 + (1000 * int(km_exactos))
-                
-                # Generar imagen estática del mapa centrada en el destino
-                dir_codificada = urllib.parse.quote(direccion_destino)
-                mapa_url = f"https://maps.googleapis.com/maps/api/staticmap?center={dir_codificada}&zoom=15&size=200x200&markers=color:red%7C{dir_codificada}&key={GOOGLE_MAPS_API_KEY}"
-                
-                return {
-                    "distancia_km": round(km_exactos, 1),
-                    "costo_envio": float(costo),
-                    "mapa_url": mapa_url
-                }
-            else:
-                raise HttpError(400, "Google Maps no encontró una ruta válida hacia esa dirección.")
+    direccion_origen = (body.origen or "").strip() or DIRECCION_ORIGEN
+
+    # Asegurar sufijo de contexto colombiano si no lo tiene
+    dir_dest_query = direccion_destino
+    if "colombia" not in dir_dest_query.lower():
+        dir_dest_query += ", Cali, Valle del Cauca, Colombia"
+
+    dir_orig_query = direccion_origen
+    if "colombia" not in dir_orig_query.lower():
+        dir_orig_query += ", Cali, Valle del Cauca, Colombia"
+
+    dir_codificada = urllib.parse.quote(dir_dest_query)
+    mapa_url = f"https://www.google.com/maps/search/?api=1&query={dir_codificada}"
+
+    km_calculados = None
+
+    # TIER 1: Intento con Google Maps si hay una clave válida configurada
+    if GOOGLE_MAPS_API_KEY and len(GOOGLE_MAPS_API_KEY) > 10:
+        try:
+            url_gmaps = "https://maps.googleapis.com/maps/api/distancematrix/json"
+            params = {
+                "origins": dir_orig_query,
+                "destinations": dir_dest_query,
+                "key": GOOGLE_MAPS_API_KEY,
+                "units": "metric"
+            }
+            res_g = requests.get(url_gmaps, params=params, timeout=4)
+            data_g = res_g.json()
+            if data_g.get("status") == "OK":
+                element = data_g["rows"][0]["elements"][0]
+                if element.get("status") == "OK":
+                    metros = element["distance"]["value"]
+                    km_calculados = metros / 1000.0
+                    mapa_url = f"https://maps.googleapis.com/maps/api/staticmap?center={dir_codificada}&zoom=15&size=200x200&markers=color:red%7C{dir_codificada}&key={GOOGLE_MAPS_API_KEY}"
+        except Exception:
+            pass
+
+    # TIER 2: Intento con OpenStreetMap (Nominatim + OSRM)
+    if km_calculados is None:
+        coords_dest = geocodificar_osm(dir_dest_query)
+        coords_orig = geocodificar_osm(dir_orig_query)
+
+        # Si el origen no se resolvió, usar coordenadas centrales de Cali (3.4516, -76.5320)
+        if not coords_orig:
+            coords_orig = (3.4516, -76.5320)
+
+        if coords_dest and coords_orig:
+            km_osrm = calcular_distancia_osrm(coords_orig[0], coords_orig[1], coords_dest[0], coords_dest[1])
+            if km_osrm and km_osrm > 0:
+                km_calculados = km_osrm
+
+    # TIER 3: Heurística urbana para direcciones locales (cuadras / nomenclatura)
+    if km_calculados is None or km_calculados <= 0:
+        nums = [int(n) for n in re.findall(r'\b\d+\b', direccion_destino) if int(n) < 150]
+        if len(nums) >= 2:
+            cuadras = abs(nums[0] - 10) + abs(nums[1] - 5)
+            km_calculados = max(1.5, min(14.0, cuadras * 0.11))
+        elif len(nums) == 1:
+            km_calculados = max(1.8, min(10.0, nums[0] * 0.15))
         else:
-            raise HttpError(400, f"Error del servicio de mapas: {data.get('status')}")
-            
-    except requests.exceptions.RequestException:
-        raise HttpError(500, "Error de conexión con Google Maps.")
+            km_calculados = 3.5
+
+    km_redondeado = round(km_calculados, 1)
+    costo = 3000 + (1000 * int(km_redondeado))
+
+    return {
+        "distancia_km": km_redondeado,
+        "costo_envio": float(costo),
+        "mapa_url": mapa_url
+    }
 
 @caja_router.get("/pedidos", response=List[PedidoResponse], auth=AuthBearer())
 def listar_pedidos(request):
@@ -101,18 +175,17 @@ def listar_pedidos(request):
 @caja_router.put("/pedidos/{pedido_id}", response=PedidoResponse, auth=AuthBearer())
 def actualizar_pedido(request, pedido_id: int, datos: PedidoUpdate):
     if request.auth.tipo_usuario != 'administrador':
-        raise HttpError(403, "Solo administradores")
+        raise HttpError(403, "Solo administradores pueden modificar pedidos")
         
     try:
-        pedido = Pedido.objects.get(idPedido=pedido_id)
-        if datos.estado:
-            pedido.estado = datos.estado
-        if datos.responsableRecepcion:
-            pedido.responsableRecepcion = datos.responsableRecepcion
-        pedido.save()
+        pedido = actualizar_pedido_crud(pedido_id, datos)
         return formatear_pedido_response(pedido)
-    except Pedido.DoesNotExist:
-        raise HttpError(404, "Pedido no encontrado")
+    except HttpError:
+        raise
+    except ValueError as e:
+        raise HttpError(400, str(e))
+    except Exception as e:
+        raise HttpError(500, f"Error actualizando pedido: {str(e)}")
 
 @caja_router.delete("/pedidos/{pedido_id}", auth=AuthBearer())
 def cancelar_pedido(request, pedido_id: int):

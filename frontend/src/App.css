@@ -745,3 +745,232 @@ tr:hover td {
   height: 22px;
   flex-shrink: 0;
 }
+
+/* ============================================================
+   TEMA OSCURO (DARK MODE)
+   ============================================================ */
+[data-theme="dark"], body.dark-mode {
+  --bg-color: #0b0f19;
+  --panel-bg: rgba(17, 24, 39, 0.88);
+  --glass-border: #374151;
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --primary-light: rgba(99, 102, 241, 0.18);
+  --text-main: #f3f4f6;
+  --text-muted: #9ca3af;
+  --input-bg: #1f2937;
+  --input-text: #f9fafb;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.7);
+}
+
+[data-theme="dark"] .container,
+body.dark-mode .container {
+  background: rgba(17, 24, 39, 0.88);
+  border-color: #374151;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+}
+
+[data-theme="dark"] .crud-panel,
+body.dark-mode .crud-panel {
+  background: rgba(31, 41, 55, 0.75);
+  border-color: #374151;
+}
+
+[data-theme="dark"] .users-list-panel,
+body.dark-mode .users-list-panel {
+  border-color: #374151;
+}
+
+[data-theme="dark"] .users-table-container,
+body.dark-mode .users-table-container {
+  background: rgba(31, 41, 55, 0.55);
+  border-color: #374151;
+}
+
+[data-theme="dark"] th,
+body.dark-mode th {
+  background: rgba(255, 255, 255, 0.05);
+  color: #9ca3af;
+  border-bottom-color: #374151;
+}
+
+[data-theme="dark"] td,
+body.dark-mode td {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+  color: #f3f4f6;
+}
+
+[data-theme="dark"] tr:hover td,
+body.dark-mode tr:hover td {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+[data-theme="dark"] .navbar,
+body.dark-mode .navbar {
+  border-bottom-color: #374151;
+}
+
+[data-theme="dark"] .navbar-brand,
+body.dark-mode .navbar-brand {
+  color: #818cf8;
+}
+
+[data-theme="dark"] .nav-btn,
+body.dark-mode .nav-btn {
+  color: #9ca3af;
+}
+
+[data-theme="dark"] .nav-btn:hover,
+body.dark-mode .nav-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .nav-btn.active,
+body.dark-mode .nav-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .dashboard-header,
+body.dark-mode .dashboard-header {
+  border-bottom-color: #374151;
+}
+
+[data-theme="dark"] .user-details h3,
+body.dark-mode .user-details h3 {
+  color: #f3f4f6;
+}
+
+[data-theme="dark"] .form-group input,
+[data-theme="dark"] .form-group select,
+body.dark-mode .form-group input,
+body.dark-mode .form-group select {
+  background: #1f2937;
+  color: #f9fafb;
+  border-color: #374151;
+}
+
+[data-theme="dark"] .form-group input:focus,
+[data-theme="dark"] .form-group select:focus,
+body.dark-mode .form-group input:focus,
+body.dark-mode .form-group select:focus {
+  background: #111827;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+}
+
+[data-theme="dark"] .btn-secondary,
+body.dark-mode .btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f3f4f6;
+  border-color: #374151;
+}
+
+[data-theme="dark"] .btn-secondary:hover,
+body.dark-mode .btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: #4b5563;
+}
+
+[data-theme="dark"] .welcome-card,
+body.dark-mode .welcome-card {
+  background: rgba(31, 41, 55, 0.7);
+  border-color: #374151;
+}
+
+[data-theme="dark"] .quick-action-btn,
+body.dark-mode .quick-action-btn {
+  background: rgba(31, 41, 55, 0.8);
+  border-color: #374151;
+  color: #f3f4f6;
+}
+
+[data-theme="dark"] .quick-action-btn:hover,
+body.dark-mode .quick-action-btn:hover {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.15);
+}
+
+[data-theme="dark"] .role-badge.normal,
+body.dark-mode .role-badge.normal {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+  border-color: rgba(156, 163, 175, 0.25);
+}
+
+/* ============================================================
+   MODOS DE DALTONISMO Y ACCESIBILIDAD VISUAL
+   ============================================================ */
+/* Protanopía / Protanomalía (Dificultad con rojo) */
+[data-daltonism="protanopia"] {
+  --primary: #0284c7 !important;
+  --primary-hover: #0369a1 !important;
+  --primary-light: rgba(2, 132, 199, 0.15) !important;
+  --success: #0284c7 !important;
+  --error: #d97706 !important;
+  --warning: #eab308 !important;
+}
+
+/* Deuteranopía / Deuteranomalía (Dificultad con verde) */
+[data-daltonism="deuteranopia"] {
+  --primary: #2563eb !important;
+  --primary-hover: #1d4ed8 !important;
+  --primary-light: rgba(37, 99, 235, 0.15) !important;
+  --success: #3b82f6 !important;
+  --error: #ea580c !important;
+  --warning: #f59e0b !important;
+}
+
+/* Tritanopía / Tritanomalía (Dificultad con azul) */
+[data-daltonism="tritanopia"] {
+  --primary: #db2777 !important;
+  --primary-hover: #be185d !important;
+  --primary-light: rgba(219, 39, 119, 0.15) !important;
+  --success: #0d9488 !important;
+  --error: #e11d48 !important;
+  --warning: #06b6d4 !important;
+}
+
+/* Acromatopsia (Monocromático / Escala de Grises) */
+[data-daltonism="achromatopsia"] {
+  filter: grayscale(100%);
+}
+
+/* Alto Contraste */
+[data-daltonism="high-contrast"] {
+  --bg-color: #000000 !important;
+  --panel-bg: #0a0a0a !important;
+  --glass-border: #ffffff !important;
+  --text-main: #ffffff !important;
+  --text-muted: #e5e7eb !important;
+  --input-bg: #000000 !important;
+  --input-text: #ffffff !important;
+  --primary: #facc15 !important;
+  --primary-hover: #eab308 !important;
+  --primary-light: rgba(250, 204, 21, 0.25) !important;
+  --success: #22c55e !important;
+  --error: #ef4444 !important;
+}
+[data-daltonism="high-contrast"] button,
+[data-daltonism="high-contrast"] input,
+[data-daltonism="high-contrast"] select,
+[data-daltonism="high-contrast"] .container,
+[data-daltonism="high-contrast"] .crud-panel,
+[data-daltonism="high-contrast"] .users-table-container {
+  border-width: 2px !important;
+  font-weight: 600 !important;
+}
+
+/* ============================================================
+   TAMAÑO DE FUENTE / ESCALADO
+   ============================================================ */
+[data-font-size="large"] {
+  font-size: 112%;
+}
+
+[data-font-size="xlarge"] {
+  font-size: 124%;
+}

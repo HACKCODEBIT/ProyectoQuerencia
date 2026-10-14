@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 import Caja from './Caja';
+import Inventario from './Inventario';
+import MenuGestion from './MenuGestion';
+import Facturacion from './Facturacion';
+import Configuracion from './Configuracion';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
@@ -32,6 +36,13 @@ const WarningIcon = () => (
     <circle cx="12" cy="12" r="10" />
     <line x1="12" y1="8" x2="12" y2="12" />
     <line x1="12" y1="16" x2="12.01" y2="16" />
+  </svg>
+);
+
+const SearchIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
   </svg>
 );
 
@@ -82,13 +93,14 @@ function App() {
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
 
   // Estados de Formularios de Autenticación
-  const [authForm, setAuthForm] = useState({ nombre: '', correo: '', contrasena: '', tipo_usuario: 'normal', token: '' });
+  const [authForm, setAuthForm] = useState({ dni: '', nombre: '', correo: '', contrasena: '', tipo_usuario: 'normal', token: '' });
 
   // Estados del CRUD de Usuarios
   const [users, setUsers] = useState([]);
   const [crudMode, setCrudMode] = useState('create'); // 'create' | 'edit'
-  const [crudForm, setCrudForm] = useState({ nombre: '', correo: '', contrasena: '', tipo_usuario: 'normal', token: '' });
+  const [crudForm, setCrudForm] = useState({ dni: '', nombre: '', correo: '', contrasena: '', tipo_usuario: 'normal', token: '' });
   const [editingUserId, setEditingUserId] = useState(null);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
 
   // Estados de carga (Spinner y botones deshabilitados)
   const [isLoading, setIsLoading] = useState(false);
@@ -99,7 +111,20 @@ function App() {
   const [showCrudPassword, setShowCrudPassword] = useState(false);
 
   // Estados del Menú / Pestañas de Navegación del Dashboard
-  const [activeTab, setActiveTab] = useState('inicio'); // 'inicio' | 'usuarios'
+  const [activeTab, setActiveTab] = useState('inicio'); // 'inicio' | 'usuarios' | 'configuracion'
+
+  // Estados de Personalización / Accesibilidad
+  const [themeSettings, setThemeSettings] = useState(() => ({
+    theme: localStorage.getItem('app_theme') || 'light',
+    daltonism: localStorage.getItem('app_daltonism') || 'normal',
+    fontSize: localStorage.getItem('app_font_size') || 'normal'
+  }));
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', themeSettings.theme);
+    document.documentElement.setAttribute('data-daltonism', themeSettings.daltonism);
+    document.documentElement.setAttribute('data-font-size', themeSettings.fontSize);
+  }, [themeSettings]);
 
   // Estado del sistema de Notificaciones (Toasts)
   const [toasts, setToasts] = useState([]);
@@ -236,10 +261,13 @@ function App() {
   };
 
   // 4. Listar Todos los Usuarios (GET /usuarios/)
-  const cargarUsuarios = async () => {
+  const cargarUsuarios = async (busqueda = '') => {
     setIsUsersLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/usuarios/`, {
+      const url = busqueda 
+        ? `${API_BASE_URL}/usuarios/?buscar=${encodeURIComponent(busqueda)}` 
+        : `${API_BASE_URL}/usuarios/`;
+      const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -254,6 +282,18 @@ function App() {
       setIsUsersLoading(false);
     }
   };
+
+  // Filtrado reactivo de usuarios por DNI, nombre, correo o rol
+  const usuariosFiltrados = users.filter((u) => {
+    if (!userSearchTerm.trim()) return true;
+    const term = userSearchTerm.toLowerCase().trim();
+    return (
+      (u.dni && String(u.dni).toLowerCase().includes(term)) ||
+      (u.nombre && u.nombre.toLowerCase().includes(term)) ||
+      (u.correo && u.correo.toLowerCase().includes(term)) ||
+      (u.tipo_usuario && u.tipo_usuario.toLowerCase().includes(term))
+    );
+  });
 
   // 5. Crear Usuario desde CRUD (POST /auth/register)
   const manejarCrearCrud = async (e) => {
@@ -273,7 +313,7 @@ function App() {
       const data = await res.json();
       if (res.ok) {
         showToast(`Usuario "${data.nombre}" creado exitosamente.`, 'success');
-        setCrudForm({ nombre: '', correo: '', contrasena: '', tipo_usuario: 'normal', token: '' });
+        setCrudForm({ dni: '', nombre: '', correo: '', contrasena: '', tipo_usuario: 'normal', token: '' });
         setShowCrudPassword(false);
         cargarUsuarios();
       } else {
@@ -293,7 +333,7 @@ function App() {
       return;
     }
     setCrudMode('edit');
-    setEditingUserId(usuario.idUsuario);
+    setEditingUserId(usuario.dni);
     setCrudForm({ 
       nombre: usuario.nombre, 
       correo: usuario.correo, 
@@ -331,7 +371,7 @@ function App() {
         showToast('Usuario actualizado correctamente.', 'success');
         cancelarEdicion();
         cargarUsuarios();
-        if (editingUserId === currentUser?.idUsuario) {
+        if (editingUserId === currentUser?.dni) {
           obtenerPerfilActual();
         }
       } else {
@@ -345,7 +385,7 @@ function App() {
   };
 
   // 8. Eliminar Usuario (DELETE /usuarios/{id})
-  const manejarEliminar = async (idUsuario) => {
+  const manejarEliminar = async (dni) => {
     if (currentUser?.tipo_usuario !== 'administrador') {
       showToast('No tienes permisos para eliminar usuarios.', 'error');
       return;
@@ -354,14 +394,14 @@ function App() {
     if (!confirm('¿Estás seguro de que deseas eliminar este usuario?')) return;
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/usuarios/${idUsuario}`, {
+      const res = await fetch(`${API_BASE_URL}/usuarios/${dni}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
         showToast('Usuario eliminado exitosamente.', 'success');
         cargarUsuarios();
-        if (idUsuario === currentUser?.idUsuario) {
+        if (dni === currentUser?.dni) {
           cerrarSesion();
         }
       } else {
@@ -386,7 +426,7 @@ function App() {
   const cancelarEdicion = () => {
     setCrudMode('create');
     setEditingUserId(null);
-    setCrudForm({ nombre: '', correo: '', contrasena: '', tipo_usuario: 'normal', token: '' });
+    setCrudForm({ dni: '', nombre: '', correo: '', contrasena: '', tipo_usuario: 'normal', token: '' });
     setShowCrudPassword(false);
   };
 
@@ -436,7 +476,18 @@ function App() {
             {authMode === 'register' && (
               <>
                 <div className="form-group">
-                  <label>Nombre Completo</label>
+                  <label>DNI / Documento</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. 123456789"
+                      required
+                      disabled={isLoading}
+                      value={authForm.dni}
+                      onChange={(e) => setAuthForm({ ...authForm, dni: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Nombre Completo</label>
                   <input
                     type="text"
                     placeholder="Ej. Harry Potter"
@@ -599,8 +650,29 @@ function App() {
               >
                 Gestión de Caja
               </button>
-              <button className="nav-btn" onClick={() => showToast('Módulo en desarrollo (Simulado)', 'success')} style={{ opacity: 0.5 }}>
-                Configuración
+              <button 
+                className={`nav-btn ${activeTab === 'inventario' ? 'active' : ''}`}
+                onClick={() => setActiveTab('inventario')}
+              >
+                Gestión de Inventario
+              </button>
+              <button 
+                className={`nav-btn ${activeTab === 'menu' ? 'active' : ''}`}
+                onClick={() => setActiveTab('menu')}
+              >
+                Gestión de Menú
+              </button>
+              <button 
+                className={`nav-btn ${activeTab === 'facturacion' ? 'active' : ''}`}
+                onClick={() => setActiveTab('facturacion')}
+              >
+                Módulo de Facturación
+              </button>
+              <button 
+                className={`nav-btn ${activeTab === 'configuracion' ? 'active' : ''}`}
+                onClick={() => setActiveTab('configuracion')}
+              >
+                ⚙️ Configuración
               </button>
             </div>
           </div>
@@ -618,10 +690,22 @@ function App() {
                     {currentUser?.tipo_usuario === 'administrador' ? 'Admin' : 'Normal'}
                   </span>
                 </h3>
-                <p>{currentUser?.correo} (ID: {currentUser?.idUsuario})</p>
+                <p>{currentUser?.correo} </p>
               </div>
             </div>
-            <div className="header-actions" style={{ display: 'flex', gap: '10px' }}>
+            <div className="header-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <button 
+                className="btn btn-secondary" 
+                title={themeSettings.theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                onClick={() => {
+                  const nextTheme = themeSettings.theme === 'dark' ? 'light' : 'dark';
+                  localStorage.setItem('app_theme', nextTheme);
+                  setThemeSettings(prev => ({ ...prev, theme: nextTheme }));
+                }}
+                style={{ width: 'auto', padding: '8px 12px', fontSize: '0.9rem', cursor: 'pointer' }}
+              >
+                {themeSettings.theme === 'dark' ? '☀️ Claro' : '🌙 Oscuro'}
+              </button>
               <button className="btn btn-secondary logout-btn" onClick={cerrarSesion} disabled={isLoading}>
                 Cerrar Sesión
               </button>
@@ -670,6 +754,20 @@ function App() {
             </div>
           ) : activeTab === 'caja' ? (
             <Caja currentUser={currentUser} token={token} showToast={showToast} />
+          ) : activeTab === 'inventario' ? (
+            <Inventario currentUser={currentUser} token={token} showToast={showToast} />
+          ) : activeTab === 'menu' ? (
+            <MenuGestion currentUser={currentUser} token={token} showToast={showToast} />
+          ) : activeTab === 'facturacion' ? (
+            <Facturacion currentUser={currentUser} token={token} showToast={showToast} />
+          ) : activeTab === 'configuracion' ? (
+            <Configuracion 
+              currentUser={currentUser} 
+              token={token} 
+              showToast={showToast} 
+              themeSettings={themeSettings}
+              onUpdateThemeSettings={setThemeSettings}
+            />
           ) : (
             // --- VISTA DEL CRUD DE USUARIOS ---
             <div className="dashboard-grid" style={{ gridTemplateColumns: currentUser?.tipo_usuario === 'administrador' ? '300px 1fr' : '1fr' }}>
@@ -678,6 +776,17 @@ function App() {
                 <div className="crud-panel">
                   <h4>{crudMode === 'create' ? 'Crear Nuevo Usuario' : 'Editar Usuario'}</h4>
                   <form onSubmit={crudMode === 'create' ? manejarCrearCrud : manejarEditarCrud}>
+                    <div className="form-group">
+                      <label>DNI / Documento</label>
+                      <input
+                        type="text"
+                        placeholder="Ej. 123456789"
+                        required={crudMode === 'create'}
+                        disabled={isLoading || crudMode === 'edit'}
+                        value={crudForm.dni}
+                        onChange={(e) => setCrudForm({ ...crudForm, dni: e.target.value })}
+                      />
+                    </div>
                     <div className="form-group">
                       <label>Nombre</label>
                       <input
@@ -778,14 +887,82 @@ function App() {
                   </div>
                 )}
 
-                <h2 style={{ textAlign: 'left', marginBottom: '20px', fontSize: '1.5rem', color: 'var(--text-main)' }}>
-                  Usuarios Registrados ({users.length})
-                </h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                  <h2 style={{ textAlign: 'left', margin: 0, fontSize: '1.5rem', color: 'var(--text-main)' }}>
+                    Usuarios Registrados ({usuariosFiltrados.length}{userSearchTerm.trim() ? ` de ${users.length}` : ''})
+                  </h2>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => { setUserSearchTerm(''); cargarUsuarios(); }}
+                    disabled={isUsersLoading}
+                    style={{ width: 'auto' }}
+                    title="Recargar usuarios"
+                  >
+                    🔄 Recargar
+                  </button>
+                </div>
+
+                {/* Barra de Búsqueda de Usuarios */}
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <span style={{ position: 'absolute', left: '14px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
+                      <SearchIcon />
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="Buscar por DNI, nombre, correo o rol..."
+                      value={userSearchTerm}
+                      onChange={(e) => setUserSearchTerm(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '12px 38px 12px 42px',
+                        borderRadius: '12px',
+                        border: '1px solid var(--glass-border)',
+                        background: 'var(--input-bg)',
+                        color: 'var(--input-text)',
+                        fontSize: '0.95rem',
+                        outline: 'none'
+                      }}
+                    />
+                    {userSearchTerm && (
+                      <button
+                        type="button"
+                        onClick={() => setUserSearchTerm('')}
+                        style={{
+                          position: 'absolute',
+                          right: '12px',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--text-muted)',
+                          fontSize: '1rem',
+                          padding: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                        title="Limpiar búsqueda"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  {userSearchTerm && (
+                    <div style={{ marginTop: '8px', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', padding: '0 4px' }}>
+                      <span>Resultados para "<strong>{userSearchTerm}</strong>": {usuariosFiltrados.length} usuario{usuariosFiltrados.length === 1 ? '' : 's'}</span>
+                      <span style={{ cursor: 'pointer', color: 'var(--primary)', textDecoration: 'underline' }} onClick={() => setUserSearchTerm('')}>
+                        Limpiar filtro
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 <div className="users-table-container">
                   <table>
                     <thead>
                       <tr>
-                        <th>ID</th>
+                        <th>DNI</th>
                         <th>Nombre</th>
                         <th>Correo</th>
                         <th>Rol</th>
@@ -800,10 +977,10 @@ function App() {
                             <p style={{ marginTop: '10px', color: 'var(--text-muted)' }}>Cargando usuarios...</p>
                           </td>
                         </tr>
-                      ) : users.length > 0 ? (
-                        users.map((u) => (
-                          <tr key={u.idUsuario}>
-                            <td>{u.idUsuario}</td>
+                      ) : usuariosFiltrados.length > 0 ? (
+                        usuariosFiltrados.map((u) => (
+                          <tr key={u.dni}>
+                            <td>{u.dni}</td>
                             <td style={{ fontWeight: '600' }}>{u.nombre}</td>
                             <td style={{ color: 'var(--text-muted)' }}>{u.correo}</td>
                             <td>
@@ -822,7 +999,7 @@ function App() {
                                 </button>
                                 <button
                                   className="btn btn-danger btn-sm"
-                                  onClick={() => manejarEliminar(u.idUsuario)}
+                                  onClick={() => manejarEliminar(u.dni)}
                                   disabled={isLoading}
                                 >
                                   Eliminar
@@ -835,7 +1012,21 @@ function App() {
                         <tr>
                           <td colSpan={currentUser?.tipo_usuario === 'administrador' ? 5 : 4}>
                             <div className="empty-state">
-                              <p>No hay usuarios registrados.</p>
+                              {userSearchTerm.trim() ? (
+                                <>
+                                  <p style={{ marginBottom: '10px' }}>No se encontraron usuarios que coincidan con "<strong>{userSearchTerm}</strong>".</p>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => setUserSearchTerm('')}
+                                    style={{ width: 'auto', display: 'inline-block' }}
+                                  >
+                                    Limpiar búsqueda
+                                  </button>
+                                </>
+                              ) : (
+                                <p>No hay usuarios registrados.</p>
+                              )}
                             </div>
                           </td>
                         </tr>

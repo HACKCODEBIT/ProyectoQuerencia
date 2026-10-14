@@ -8,27 +8,27 @@ class ProductoCreate(Schema):
     descripcion: str = ""
     precio: float
     stock: int = 0
-    categoria_id: Optional[int] = None
+    categoria_id: Optional[str] = None
 
 class ProductoResponse(Schema):
-    idProducto: int
+    dni_producto: str
     nombre: str
     descripcion: str
     precio: float
     stock: int
     
 class CategoriaResponse(Schema):
-    idCategoria: int
+    codigo: str
     nombre: str
 
 # ==================== PEDIDOS ====================
 class DetallePedidoCreate(Schema):
-    producto_id: int
+    producto_id: str
     cantidad: int
 
 class DetallePedidoResponse(Schema):
     idDetalle: int
-    producto_id: int
+    producto_id: str
     producto_nombre: str
     cantidad: int
     subtotal: float
@@ -45,8 +45,14 @@ class PedidoCreate(Schema):
     detalles: List[DetallePedidoCreate]
 
 class PedidoUpdate(Schema):
-    estado: Optional[str] = None
+    cliente: Optional[str] = None
+    cedulaCliente: Optional[int] = None
     responsableRecepcion: Optional[str] = None
+    direccionEnvio: Optional[str] = None
+    distancia_km: Optional[float] = None
+    costo_envio: Optional[float] = None
+    estado: Optional[str] = None
+    detalles: Optional[List[DetallePedidoCreate]] = None
 
 class PedidoResponse(Schema):
     idPedido: int
@@ -56,7 +62,7 @@ class PedidoResponse(Schema):
     direccionEnvio: Optional[str] = None
     distancia_km: Optional[float] = 0.0
     costo_envio: Optional[float] = 0.0
-    usuario_id: int
+    usuario_id: str
     total: float
     detalles: List[DetallePedidoResponse]
     wompi_transaction_id: Optional[str] = None
@@ -64,6 +70,7 @@ class PedidoResponse(Schema):
 
 class CalcularEnvioRequest(Schema):
     direccion: str
+    origen: Optional[str] = None
 
 # ==================== FACTURAS ====================
 class FacturaResponse(Schema):

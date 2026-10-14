@@ -1,22 +1,32 @@
+from django.db.models import Q
 from django.contrib.auth.hashers import make_password, check_password
 from modelos.models import Usuario, TokenInvitacion
 from esquemas.usuario import UsuarioCreate, UsuarioUpdate
 
-def obtener_usuario(id_usuario: int):
+def obtener_usuario(id_usuario: str):
     try:
-        return Usuario.objects.get(idUsuario=id_usuario)
+        return Usuario.objects.get(dni=id_usuario)
     except Usuario.DoesNotExist:
         return None
 
 def obtener_usuario_por_correo(correo: str):
     return Usuario.objects.filter(correo=correo).first()
 
-def obtener_usuarios(skip: int = 0, limit: int = 100):
-    return Usuario.objects.all()[skip:skip+limit]
+def obtener_usuarios(skip: int = 0, limit: int = 100, buscar: str = None):
+    qs = Usuario.objects.all()
+    if buscar:
+        qs = qs.filter(
+            Q(dni__icontains=buscar) |
+            Q(nombre__icontains=buscar) |
+            Q(correo__icontains=buscar) |
+            Q(tipo_usuario__icontains=buscar)
+        )
+    return qs[skip:skip+limit]
 
 def crear_usuario(usuario: UsuarioCreate, token_invitacion: TokenInvitacion = None):
     contrasena_encriptada = make_password(usuario.contrasena)
     db_usuario = Usuario(
+        dni=usuario.dni,
         nombre=usuario.nombre,
         correo=usuario.correo,
         contrasena=contrasena_encriptada,
@@ -27,7 +37,7 @@ def crear_usuario(usuario: UsuarioCreate, token_invitacion: TokenInvitacion = No
     db_usuario.save()
     return db_usuario
 
-def actualizar_usuario(id_usuario: int, usuario_update: UsuarioUpdate):
+def actualizar_usuario(id_usuario: str, usuario_update: UsuarioUpdate):
     db_usuario = obtener_usuario(id_usuario)
     if not db_usuario:
         return None
@@ -42,7 +52,7 @@ def actualizar_usuario(id_usuario: int, usuario_update: UsuarioUpdate):
     db_usuario.save()
     return db_usuario
 
-def eliminar_usuario(id_usuario: int):
+def eliminar_usuario(id_usuario: str):
     db_usuario = obtener_usuario(id_usuario)
     if not db_usuario:
         return None

@@ -12,6 +12,7 @@ class UsuarioBase(Schema):
     correo: EmailStr
 
 class UsuarioCreate(UsuarioBase):
+    dni: str
     contrasena: str
     tipo_usuario: str = 'normal'
     token: Optional[str] = None
@@ -24,7 +25,7 @@ class UsuarioUpdate(Schema):
     token: Optional[str] = None
 
 class UsuarioResponse(Schema):
-    idUsuario: int
+    dni: str
     nombre: str
     correo: EmailStr
     tipo_usuario: str
